@@ -1,0 +1,38 @@
+#Python File Learning the Basics of Tensors in Pytorch Library
+import torch
+device = (
+    "cuda"
+    if torch.cuda.is_available()
+    else "cpu"
+)
+
+print(f"Using device: {device}")
+
+matrix1  = torch.tensor([3.0, 3.0], device=device)
+matrix2  = torch.tensor([2.0, 2.0], device=device)
+matrix3  = matrix1 * matrix2
+print(matrix3)
+
+tensor1 = torch.ones(2,2,3, dtype=torch.float16)
+print(tensor1.dtype)
+
+x_rand = torch.rand(size=(2, 2))
+y_rand = torch.rand(size=(2, 2))
+print(x_rand)
+print(y_rand)
+
+x_add_rand_tensors = x_rand + y_rand
+x_add_rand_tensors = torch.add(x_rand, y_rand)
+x_sub_rand_tensors = torch.sub(x_rand, y_rand)
+x_mul_rand_tensors = torch.mul(x_rand, y_rand)
+x_div_rand_tensors = torch.div(x_rand, y_rand)
+
+print(f"This is the sum of the two tensors {x_add_rand_tensors}")
+print(f"This is the difference of the two tensors {x_sub_rand_tensors}")
+print(f"This is the product of the two tensors {x_mul_rand_tensors}")
+print(f"This is the quotient of the two tensors {x_div_rand_tensors}")
+
+print(f"This is the first row of the Tensor x_rand: {x_rand[0,:]}")
+print(f"This is the first column of the Tensor x_rand: {x_rand[:,0]}")
+print(f"This is the size of the Tensor x_rand: {x_rand.size()}")
+print(f"This is the shape of the Tensor x_rand: {x_rand.shape}")
