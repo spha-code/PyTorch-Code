@@ -1,0 +1,11 @@
+#autograd simple example
+import torch
+a = torch.zeros((2, 2), requires_grad=True)
+print(a)
+for y in range(3):
+  a = a + 2 
+  print(a)
+  print(a.grad_fn)
+  a = a * 2 
+  print(a)
+  print(a.grad_fn)
