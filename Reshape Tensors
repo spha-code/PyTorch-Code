@@ -1,0 +1,7 @@
+# A basic Operation of reshaping a Tensor
+import torch
+
+X = torch.randn(2,3)
+print(f"This is a 2 * 3 Tensor:\n\n {X}\n")
+Y = X.reshape(1,6)
+print(f"This is a 1 * 6 Tensor:\n\n {Y}\n")
