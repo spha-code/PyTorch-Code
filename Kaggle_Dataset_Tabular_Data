@@ -1,0 +1,207 @@
+#!pip install opendatasets --quiet #Used for Kaggle Datasets
+#!pip install torchsummary --quiet
+#!pip install scikit-learn --quiet
+
+import opendatasets as od
+od.download('https://www.kaggle.com/datasets/mssmartypants/rice-type-classification/croissant/download')
+
+import torch
+import torch.nn as nn
+from torch.optim import Adam
+from torch.utils.data import Dataset, DataLoader
+from torchsummary import summary
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+
+device =  "cuda" if torch.cuda.is_available() else "cpu"
+print(device)
+
+data_df = pd.read_csv("rice-type-classification/riceClassification.csv")
+data_df.dropna(inplace=True)
+data_df = data_df.drop("id", axis=1)
+data_df.head(5)
+
+print(data_df.shape)
+
+print(data_df["Class"].unique())
+print(data_df["Class"].value_counts())
+
+original_df = data_df.copy()
+
+#Data Normalization / All values divided by the largest value in each [column]
+for column in data_df.columns:
+    data_df[column] = data_df[column]/data_df[column].abs().max()
+
+data_df.head(5)
+
+#Split the Dataset
+X = np.array(data_df.iloc[:,:-1]) #X : all columns but the last one
+Y = np.array(data_df.iloc[:,-1]) #Y : is Only the last column
+
+X.shape, Y.shape
+
+X_train, X_test, y_train, y_test = train_test_split(X,Y, test_size = 0.3)
+
+print(f"X train:{X_train.shape}, X test:{X_test.shape}, y train:{y_train.shape}, y test:{y_test.shape}")
+
+X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size = 0.5)
+
+print(f"X test:{X_test.shape}, X val:{X_val.shape}, y test:{y_test.shape}, y val:{y_val.shape}")
+
+#Convert to Pytorch Dataset Object
+class dataset(Dataset):
+    def __init__(self, X, Y):
+        self.X = torch.tensor(X, dtype=torch.float32).to(device) #Converting X to torch tensor
+        self.Y = torch.tensor(Y, dtype=torch.float32).to(device) #Converting Y to torch tensor
+
+    def __len__(self):
+        return len(self.X) #returns the shape of input
+
+    def __getitem__(self, index): #item is a row in the list
+        return self.X[index], self.Y[index]
+
+training_data = dataset(X_train, y_train)
+validation_data = dataset(X_val, y_val)
+testing_data = dataset(X_test, y_test)
+
+#Dataloaders to loop forward though batches of 8 x and 8 y
+train_dataloader = DataLoader(training_data, batch_size = 32, shuffle = True)  
+validation_dataloader = DataLoader(validation_data, batch_size = 32, shuffle = True)
+testing_dataloader = DataLoader(testing_data, batch_size = 32, shuffle = True)
+
+#With 10 neurons, the network has 10 "opportunities" or "dimensions" in this hidden space 
+#to represent and transform the input data in a way that helps the output layer make a good prediction.
+#intermediate hidden dense layer between input and the final output
+#The number "10" is a hyperparameter – a design choice.
+
+#For two subsequent nn.Linear layers where 
+#the output of the first layer is directly fed as input to the second layer, 
+#the out_features of the first nn.Linear layer must match the in_features of the second nn.Linear layer.
+
+HIDDEN_NEURONS = 10 
+
+class MyModel(nn.Module):
+    def __init__(self):
+        super(MyModel, self).__init__()
+
+        self.input_layer = nn.Linear(X.shape[1], HIDDEN_NEURONS) #nn.Linear(in_features, out_features)
+        self.linear = nn.Linear(HIDDEN_NEURONS,1 )#nn.Linear(in_features 10, out_features 10)
+        self.sigmoid = nn.Sigmoid()
+
+    #Below define how the data flows inside the model - we create the flow of the data
+    def forward(self, x):
+        x = self.input_layer(x)
+        x = self.linear(x)
+        x = self.sigmoid(x)
+        return x
+        
+model = MyModel().to(device)
+
+summary(model, (X.shape[1],))
+
+criterion = nn.BCELoss() 
+#Creates a criterion that measures the Binary Cross Entropy 
+#between the target and the input probabilities
+#This nn.BCELoss scalar loss value is what you use to perform backpropagation and update your model's weights.
+#A lower loss value is better
+optimizer = Adam(model.parameters(), lr = 1e-3)
+
+total_loss_train_plot = [] #
+total_loss_validation_plot = []
+total_accuracy_train_plot = []
+total_accuracy_validation_plot = []
+
+epochs = 10
+for epoch in range(epochs):
+    total_accuracy_train = 0
+    total_loss_train = 0
+
+
+    for data in train_dataloader:
+        inputs, labels = data # 8 full rows, 8 labels
+
+        prediction = model(inputs).squeeze(1) #sigmoid output
+
+        batch_loss = criterion(prediction, labels) ##sigmoid output(probability) and label
+
+        total_loss_train += batch_loss.item() #item to get only the number-we keep adding each batch of 8 rows
+
+        accuracy = ((prediction).round() == labels).sum().item() #prediction).round() sigmoid to 1 or 0
+        #print(prediction)
+        #print(labels)
+        #print(prediction.round())
+        #print(accuracy)
+
+        total_accuracy_train += accuracy
+        #Here we finished the forward propagation
+        
+        batch_loss.backward() #we go from the end of the model backwards
+        optimizer.step() #Optimizer take a step and change the weights
+        optimizer.zero_grad()
+        #Done with the training
+
+    #Next step is the validation - same steps as above
+    total_accuracy_validation = 0
+    total_loss_validation = 0
+    
+    with torch.no_grad(): #Using the model for inference not training so no_grad
+        for data in validation_dataloader:
+            inputs, labels = data # 8 full rows, 8 labels
+
+            prediction = model(inputs).squeeze(1) #sigmoid output
+            batch_loss = criterion(prediction, labels) ##sigmoid output(probability) and label
+            total_loss_validation += batch_loss.item() #item to get only the number-we keep adding each batch of 8 rows
+            accuracy = ((prediction).round() == labels).sum().item() #prediction).round() sigmoid to 1 or 0
+            total_accuracy_validation += accuracy
+        
+
+    total_loss_train_plot.append(round(total_loss_train/len(train_dataloader), 4))
+    total_loss_validation_plot.append(round(total_loss_validation/len(validation_dataloader), 4))
+    total_accuracy_train_plot.append(round(total_accuracy_train/training_data.__len__() * 100, 4))
+    total_accuracy_validation_plot.append(round(total_accuracy_validation/validation_data.__len__() * 100, 4))
+
+    print(f"Epoch no. {epoch+1}")
+    print(f"Train Loss: {round(total_loss_train/len(train_dataloader), 4)} ")
+    print(f"Train Accuracy: {round(total_accuracy_train/training_data.__len__() * 100, 4)}")
+
+    print(f"Validation Loss: {round(total_loss_validation/len(validation_dataloader), 4)} ")
+    print(f"Validation Accuracy: {round(total_accuracy_validation/validation_data.__len__() * 100, 4)}")
+    print("="*35)
+
+#Test our Model
+with torch.no_grad():
+    total_loss_test = 0
+    total_accuracy_test = 0
+    for data in testing_dataloader: #coming in batches
+        inputs, labels = data
+
+        prediction = model(inputs).squeeze(1)
+
+        batch_loss_test = criterion(prediction, labels).item()
+        total_loss_test += batch_loss_test
+    
+        accuracy = ((prediction).round() == labels).sum().item()
+        total_accuracy_test += accuracy
+
+    print(f" Test Accuracy:{round(total_accuracy_test/testing_data.__len__() * 100, 4)}") 
+
+
+fig, axs = plt.subplots(nrows = 1, ncols = 2, figsize = (15,5))
+axs[0].plot(total_loss_train_plot, label = 'Training Loss')
+axs[0].plot(total_loss_validation_plot, label = 'Validation Loss')
+axs[0].set_title("Training and Validation loss over epochs")
+axs[0].set_title("Epochs")
+axs[0].set_title("Loss")
+axs[0].set_ylim([0,0.06])
+axs[0].legend()
+
+axs[1].plot(total_accuracy_train_plot, label = 'Training Accuracy')
+axs[1].plot(total_accuracy_validation_plot, label = 'Validation Accuracy')
+axs[1].set_title("Training and Validation Accuracy over epochs")
+axs[1].set_title("Epochs")
+axs[1].set_title("Accuracy")
+axs[1].set_ylim([98,99])
+axs[1].legend()
